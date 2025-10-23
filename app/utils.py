@@ -1,37 +1,74 @@
-import pandas as pd
-import csv, ssl, smtplib
+import csv, ssl, smtplib, threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from pathlib import Path
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 from app.config import FAQ_PATH, SMTP_SERVER, SMTP_PORT, ALERT_EMAIL, ALERT_PASS
+
+#FAQ loading with Auto-Loading
+
+_faq_cache = []        # Stores FAQs in memory
+_cache_lock = threading.Lock()  # Prevents race conditions between reads/writes
+
+
+def _load_faq_file():
+    """Internal helper to safely read the FAQ CSV file."""
+    faqs = []
+    with open(FAQ_PATH, mode="r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if not row.get("question") or not row.get("answer"):
+                continue
+            faqs.append({
+                "question": row["question"].strip(),
+                "answer": row["answer"].strip(),
+            })
+    return faqs
+
 
 def load_faqs():
     """
-    Loads FAQ data from a CSV file safely.
-    Handles commas, quotes, and encodings automatically.
-    Returns a list of dictionaries with 'question' and 'answer' keys.
+    Returns the cached FAQ data.
+    Automatically loads from disk if cache is empty.
     """
-    faqs = []
-    try:
-        with open(FAQ_PATH, mode="r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                # Skip blank rows or rows missing required fields
-                if not row.get("question") or not row.get("answer"):
-                    continue
-                faqs.append({
-                    "question": row["question"].strip(),
-                    "answer": row["answer"].strip(),
-                })
-    except FileNotFoundError:
-        raise FileNotFoundError(f"FAQ file not found at {FAQ_PATH}")
-    except Exception as e:
-        raise RuntimeError(f"Failed to load FAQ CSV: {e}")
+    with _cache_lock:
+        if not _faq_cache:
+            _faq_cache.extend(_load_faq_file())
+    return _faq_cache
 
-    if not faqs:
-        raise ValueError("FAQ file is empty or improperly formatted.")
 
-    return faqs
+class FAQFileChangeHandler(FileSystemEventHandler):
+    """Watchdog event handler to reload FAQ data on file changes."""
 
+    def on_modified(self, event):
+        if event.src_path.endswith("faq.csv"):
+            print("📄 Detected change in faq.csv — reloading FAQs...")
+            try:
+                new_data = _load_faq_file()
+                with _cache_lock:
+                    _faq_cache.clear()
+                    _faq_cache.extend(new_data)
+                print(f"✅ Reloaded {len(new_data)} FAQs from file.")
+            except Exception as e:
+                print(f"⚠️ Failed to reload FAQs: {e}")
+
+
+def start_faq_watcher():
+    """Start a background thread that watches the FAQ file for changes."""
+    observer = Observer()
+    handler = FAQFileChangeHandler()
+    observer.schedule(handler, str(Path(FAQ_PATH).parent), recursive=False)
+    observer.daemon = True  # Stops when app shuts down
+    observer.start()
+    print("👀 FAQ file watcher is running...")
+
+
+# Start watcher automatically when module imports
+start_faq_watcher()
+
+
+# Simple Keyword search for FAQ answers
 
 def find_faq_answer(query: str, faqs: list):
     """Find a matching answer from FAQ using simple keyword search."""
@@ -42,15 +79,20 @@ def find_faq_answer(query: str, faqs: list):
     return None
 
 
+# Lead Capture
+
 def save_lead(name, email, company):
     """Append lead information to leads.csv."""
-    with open("leads.csv", "a", newline="") as f:
+    with open("leads.csv", "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([name, email, company])
+    print(f"💾 Lead saved: {name}, {email}, {company}")
 
+
+# Email Escalation
 
 def send_escalation_email(question, name, email):
-    """Send email alert when AI cannot answer (UTF-8 safe)."""
+    """Send email alert when chatbot cannot answer (UTF-8 safe)."""
     msg = MIMEMultipart()
     msg["Subject"] = "Chatbot Escalation Needed ⚠️"
     msg["From"] = ALERT_EMAIL
@@ -69,3 +111,4 @@ A new support escalation occurred.
     with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, context=context) as server:
         server.login(ALERT_EMAIL, ALERT_PASS)
         server.send_message(msg)
+    print(f"📧 Escalation email sent for: {name} ({email})")
