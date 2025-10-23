@@ -61,7 +61,6 @@ def start_faq_watcher():
     observer.schedule(handler, str(Path(FAQ_PATH).parent), recursive=False)
     observer.daemon = True  # Stops when app shuts down
     observer.start()
-    print("👀 FAQ file watcher is running...")
 
 
 # Start watcher automatically when module imports
