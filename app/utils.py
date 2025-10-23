@@ -73,12 +73,12 @@ start_faq_watcher()
 
 def find_faq_answer(query: str, faqs: list):
     """Find a matching answer from FAQ using simple keyword search."""
-    logger.info(f"🔍 Received query: '{query}' — searching FAQs.")
+    # logger.info(f"🔍 Received query: '{query}' — searching FAQs.")
     query_lower = query.lower()
     for faq in faqs:
         if any(word in faq["question"].lower() for word in query_lower.split()):
             return faq["answer"]
-    logger.info("🤖 No direct FAQ match found, escalation may be needed.")
+    # logger.info("🤖 No direct FAQ match found, escalation may be needed.")
     return None
 
 
@@ -89,7 +89,7 @@ def save_lead(name, email, company):
     with open("leads.csv", "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([name, email, company])
-    logger.info(f"💾 Lead saved: {name}, {email}, {company}")
+    # logger.info(f"💾 Lead saved: {name}, {email}, {company}")
 
 
 # Email Escalation
@@ -114,4 +114,4 @@ A new support escalation occurred.
     with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, context=context) as server:
         server.login(ALERT_EMAIL, ALERT_PASS)
         server.send_message(msg)
-    logger.info(f"📧 Escalation email sent for: {name} ({email})")
+    # logger.info(f"📧 Escalation email sent for: {name} ({email})")
