@@ -5,9 +5,32 @@ from email.mime.multipart import MIMEMultipart
 from app.config import FAQ_PATH, SMTP_SERVER, SMTP_PORT, ALERT_EMAIL, ALERT_PASS
 
 def load_faqs():
-    """Load FAQ data from a CSV file into a list of dictionaries."""
-    df = pd.read_csv(FAQ_PATH)
-    return df.to_dict(orient="records")
+    """
+    Loads FAQ data from a CSV file safely.
+    Handles commas, quotes, and encodings automatically.
+    Returns a list of dictionaries with 'question' and 'answer' keys.
+    """
+    faqs = []
+    try:
+        with open(FAQ_PATH, mode="r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # Skip blank rows or rows missing required fields
+                if not row.get("question") or not row.get("answer"):
+                    continue
+                faqs.append({
+                    "question": row["question"].strip(),
+                    "answer": row["answer"].strip(),
+                })
+    except FileNotFoundError:
+        raise FileNotFoundError(f"FAQ file not found at {FAQ_PATH}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load FAQ CSV: {e}")
+
+    if not faqs:
+        raise ValueError("FAQ file is empty or improperly formatted.")
+
+    return faqs
 
 
 def find_faq_answer(query: str, faqs: list):
