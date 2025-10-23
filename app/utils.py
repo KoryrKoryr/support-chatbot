@@ -5,6 +5,7 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from app.config import FAQ_PATH, SMTP_SERVER, SMTP_PORT, ALERT_EMAIL, ALERT_PASS
+from app.logger import logger
 
 #FAQ loading with Auto-Loading
 
@@ -35,6 +36,7 @@ def load_faqs():
     with _cache_lock:
         if not _faq_cache:
             _faq_cache.extend(_load_faq_file())
+            logger.info(f"✅ Loaded {len(_faq_cache)} FAQs from file.")
     return _faq_cache
 
 
@@ -43,15 +45,15 @@ class FAQFileChangeHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         if event.src_path.endswith("faq.csv"):
-            print("📄 Detected change in faq.csv — reloading FAQs...")
+            logger.info("📄 Detected change in faq.csv — reloading FAQs...")
             try:
                 new_data = _load_faq_file()
                 with _cache_lock:
                     _faq_cache.clear()
                     _faq_cache.extend(new_data)
-                print(f"✅ Reloaded {len(new_data)} FAQs from file.")
+                logger.info(f"✅ Reloaded {len(new_data)} FAQs from file.")
             except Exception as e:
-                print(f"⚠️ Failed to reload FAQs: {e}")
+                logger.warning(f"⚠️ Failed to reload FAQs: {e}")
 
 
 def start_faq_watcher():
@@ -71,10 +73,12 @@ start_faq_watcher()
 
 def find_faq_answer(query: str, faqs: list):
     """Find a matching answer from FAQ using simple keyword search."""
+    logger.info(f"🔍 Received query: '{query}' — searching FAQs.")
     query_lower = query.lower()
     for faq in faqs:
         if any(word in faq["question"].lower() for word in query_lower.split()):
             return faq["answer"]
+    logger.info("🤖 No direct FAQ match found, escalation may be needed.")
     return None
 
 
@@ -85,7 +89,7 @@ def save_lead(name, email, company):
     with open("leads.csv", "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([name, email, company])
-    print(f"💾 Lead saved: {name}, {email}, {company}")
+    logger.info(f"💾 Lead saved: {name}, {email}, {company}")
 
 
 # Email Escalation
@@ -110,4 +114,4 @@ A new support escalation occurred.
     with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, context=context) as server:
         server.login(ALERT_EMAIL, ALERT_PASS)
         server.send_message(msg)
-    print(f"📧 Escalation email sent for: {name} ({email})")
+    logger.info(f"📧 Escalation email sent for: {name} ({email})")
